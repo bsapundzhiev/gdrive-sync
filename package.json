@@ -1,0 +1,21 @@
+{
+  "name": "gdrive-sync",
+  "version": "1.0.0",
+  "description": "google drive sync folder ",
+  "main": "gdrive-sync.js",
+  "scripts": {
+    "test": "node gdrive-sync.js -f shared -l"
+  },
+  "keywords": [
+    "google",
+    "drive",
+    "sync",
+    "folder"
+  ],
+  "author": "Borislav Sapundzhiev",
+  "license": "GPL-2.0",
+  "dependencies": {
+    "google-auth-library": "^0.10.0",
+    "googleapis": "^16.1.0"
+  }
+}
