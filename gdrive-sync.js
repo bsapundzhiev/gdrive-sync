@@ -124,6 +124,7 @@ function storeToken(token) {
 function listFiles(auth, parent_id, pageToken, cb) {
   var ref = 0;
   var fileList = [];
+  var reqursive = parent_id !== "root";
   var _listFiles = (auth, parent_id, token) => {
     ref++;
     var service = google.drive('v3');
@@ -131,7 +132,7 @@ function listFiles(auth, parent_id, pageToken, cb) {
       auth: auth,
       spaces: 'drive',
       q:  "'"+ parent_id + "' in parents and trashed=false",
-      pageSize: 1000,
+      /*pageSize: 1000,*/
       pageToken: pageToken,
       fields: "*"
     };
@@ -150,15 +151,9 @@ function listFiles(auth, parent_id, pageToken, cb) {
         for (var i = 0; i < files.length; i++) {
           var file = files[i];
           //console.log('%s (%s) mime %s', file.name, file.id, file.mimeType);
-          fileList.push({
-            'id': file.id,
-            'name': file.name,
-            'mimeType': file.mimeType,
-            'modifiedTime': file.modifiedTime,
-            'parents': file.parents
-          });
+          fileList.push(file);
 
-          if (file.mimeType == "application/vnd.google-apps.folder") {
+          if (reqursive && file.mimeType == "application/vnd.google-apps.folder") {
             _listFiles(auth, file.id, null);
           }
         }
@@ -186,6 +181,11 @@ function findFolderByName(auth, name, callback) {
     spaces: 'drive',
     fields: "*"
   };
+  //check for alias
+  if(name === "root") {
+    callback({id:name});
+    return;
+  }
 
   service.files.list(params, function(err, response) {
 
@@ -196,9 +196,9 @@ function findFolderByName(auth, name, callback) {
 
     var files = response.files;
     if (files.length == 0) {
-      console.log('No files found.');
+      console.log('Drive folder \'%s\' not found.', name);
     } else {
-      callback(files[0].id);
+      callback(files[0]);
     }
   });
 }
@@ -326,7 +326,7 @@ function findParents(fileList, fileInfo) {
   }
 
   find(fileList, fileInfo);
-  return path.reverse().join("/");
+  fileInfo.parentsPath = path.reverse().join("/");
 }
 
 function main(auth) {
@@ -345,14 +345,19 @@ function main(auth) {
     return;
   }
 
-  findFolderByName(auth, options.folder, function(folderID) {
-    console.log("gdrive folder '%s' (%s)", options.folder, folderID);
+  findFolderByName(auth, options.folder, function(folderInfo) {
+    console.log("gdrive folder '%s' (%s)", options.folder, folderInfo.id);
 
-    listFiles(auth, folderID, null, function(fileList) {
+    listFiles(auth, folderInfo.id, null, function(fileList) {
 
       if (options.command === "list") {
         fileList.forEach(function(fileInfo) {
-          console.log("drive:%s%s/%s", options.folder, findParents(fileList, fileInfo), fileInfo.name);
+          findParents(fileList, fileInfo);
+
+          if (fileInfo.parentsPath) {
+            fileInfo.parentsPath += "/";
+          }
+          console.log("drive:%s/%s%s", options.folder, fileInfo.parentsPath, fileInfo.name);
         });
         return;
       }
@@ -362,7 +367,7 @@ function main(auth) {
       });
 
       if (options.command === "upload") {
-        fileUpload(auth, options.filePath, fileInfo, [folderID], function(err, fileInfo) {
+        fileUpload(auth, options.filePath, fileInfo, [folderInfo.id], function(err, fileInfo) {
           console.log("file uploaded: ", err , fileInfo);
         });
         return;
