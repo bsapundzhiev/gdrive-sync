@@ -1,6 +1,6 @@
 /**
  * google drive utility
- * 
+ *
  * Copyright (C) 2017 Borislav Sapundzhiev
  *
  * This program is free software: you can redistribute it and/or modify
@@ -141,12 +141,12 @@ function listFiles(auth, parent_id, pageToken, cb) {
         console.log('The API returned an error: ' + err);
         return;
       }
-      
+
       var files = response.files;
       if (files.length == 0) {
         console.log('No files found.');
       } else {
-        
+
         for (var i = 0; i < files.length; i++) {
           var file = files[i];
           //console.log('%s (%s) mime %s', file.name, file.id, file.mimeType);
@@ -160,7 +160,7 @@ function listFiles(auth, parent_id, pageToken, cb) {
 
           if (file.mimeType == "application/vnd.google-apps.folder") {
             _listFiles(auth, file.id, null);
-          }         
+          }
         }
 
         if(response.nextPageToken) {
@@ -178,7 +178,7 @@ function listFiles(auth, parent_id, pageToken, cb) {
 
 
 function findFolderByName(auth, name, callback) {
- 
+
   var service = google.drive('v3');
   var params = {
     auth: auth,
@@ -193,7 +193,7 @@ function findFolderByName(auth, name, callback) {
       console.log('The API returned an error: ' + err);
       return;
     }
-    
+
     var files = response.files;
     if (files.length == 0) {
       console.log('No files found.');
@@ -279,7 +279,6 @@ function usage() {
     +"-p <filePath> put file\n"
     +"-d delete stored credentials\n"
     +"\n", args[1]);
-    process.exit();
 }
 
 function parseArgs(options) {
@@ -287,7 +286,7 @@ function parseArgs(options) {
   for(var i=2; i < args.length; i++) {
     //console.log(args[i]);
     switch(args[i]) {
-      case "-f": 
+      case "-f":
         options.folder = args[++i];
         break;
       case "-g":
@@ -299,7 +298,7 @@ function parseArgs(options) {
         options.filePath = args[++i];
         break;
       case "-l":
-        options.command = "list"; 
+        options.command = "list";
         break;
       case "-d":
         options.command= "del";
@@ -307,7 +306,7 @@ function parseArgs(options) {
         break;
       default: {
         console.log("unknown opt");
-        process.exit();        
+        process.exit();
       }
     }
   }
@@ -331,9 +330,10 @@ function findParents(fileList, fileInfo) {
 }
 
 function main(auth) {
-  
-  if(args.length === 2) {
+
+  if (args.length === 2) {
     usage();
+    return;
   }
 
   var options = {};
@@ -347,9 +347,9 @@ function main(auth) {
 
   findFolderByName(auth, options.folder, function(folderID) {
     console.log("gdrive folder '%s' (%s)", options.folder, folderID);
-   
+
     listFiles(auth, folderID, null, function(fileList) {
-      
+
       if (options.command === "list") {
         fileList.forEach(function(fileInfo) {
           console.log("drive:%s%s/%s", options.folder, findParents(fileList, fileInfo), fileInfo.name);
