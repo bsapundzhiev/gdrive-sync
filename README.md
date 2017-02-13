@@ -4,11 +4,12 @@ nodejs google drive file copy
 
 ### setup 
 ```
-npm install 
+$ git clone https://github.com/bsapundzhiev/gdrive-sync
+$ cd gdrive-sync
+$ npm install 
 ```
 
 ### usage
-
 ```
-node gdrive-sync <options> 
+$ node gdrive-sync <options> 
 ```

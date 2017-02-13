@@ -18,6 +18,7 @@ var googleAuth = require('google-auth-library');
 var path = require('path');
 
 const args = process.argv;
+const folderMimeType = "application/vnd.google-apps.folder";
 
 // If modifying these scopes, delete your previously saved credentials
 // at ~/.credentials/drive-nodejs-quickstart.json
@@ -116,15 +117,19 @@ function storeToken(token) {
   console.log('Token stored to ' + TOKEN_PATH);
 }
 
+function isFolder(fileInfo) {
+
+  return (fileInfo.mimeType === folderMimeType);
+}
 /**
  * Walk in folder
  *
  * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
  */
-function listFiles(auth, parent_id, pageToken, cb) {
+function listFiles(auth, parent_id, pageToken, cb, reqursive) {
   var ref = 0;
   var fileList = [];
-  var reqursive = parent_id !== "root";
+  //var reqursive = parent_id !== "root";
   var _listFiles = (auth, parent_id, token) => {
     ref++;
     var service = google.drive('v3');
@@ -153,7 +158,7 @@ function listFiles(auth, parent_id, pageToken, cb) {
           //console.log('%s (%s) mime %s', file.name, file.id, file.mimeType);
           fileList.push(file);
 
-          if (reqursive && file.mimeType == "application/vnd.google-apps.folder") {
+          if (reqursive && isFolder(file)) {
             _listFiles(auth, file.id, null);
           }
         }
@@ -238,6 +243,26 @@ function fileDownload(auth, fileInfo, filePath) {
         process.exit();
       });
   });
+}
+
+function fileExport(auth, fileInfo , filePath) {
+
+    //https://developers.google.com/drive/v3/web/manage-downloads
+    var drive = google.drive({ version: 'v3', auth: auth });
+    var dest = fs.createWriteStream(filePath);
+
+    drive.files.export({
+      fileId: fileInfo.id,
+      mimeType : metadata.mimeType //'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    }, function(err, data) {
+      if(err) {
+        console.log('Error downloading file', err);
+        process.exit();
+      }
+
+      dest.write(data);
+      console.log('Downloaded %s!', filePath);
+    });
 }
 
 function fileUpload(auth, filePath, fileInfo, parentIds, callback) {
@@ -357,7 +382,7 @@ function main(auth) {
           if (fileInfo.parentsPath) {
             fileInfo.parentsPath += "/";
           }
-          console.log("drive:%s/%s%s", options.folder, fileInfo.parentsPath, fileInfo.name);
+          console.log("drive#%s:%s/%s%s", isFolder(fileInfo) ? "folder": "file", options.folder, fileInfo.parentsPath, fileInfo.name);
         });
         return;
       }
