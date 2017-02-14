@@ -126,10 +126,11 @@ function isFolder(fileInfo) {
  *
  * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
  */
-function listFiles(auth, parent_id, pageToken, cb, reqursive) {
+function listFiles(auth, parent_id, pageToken, cb, recursive) {
   var ref = 0;
   var fileList = [];
-  //var reqursive = parent_id !== "root";
+  var prevToken = null;
+
   var _listFiles = (auth, parent_id, token) => {
     ref++;
     var service = google.drive('v3');
@@ -137,7 +138,7 @@ function listFiles(auth, parent_id, pageToken, cb, reqursive) {
       auth: auth,
       spaces: 'drive',
       q:  "'"+ parent_id + "' in parents and trashed=false",
-      /*pageSize: 1000,*/
+      pageSize: 100,
       pageToken: pageToken,
       fields: "*"
     };
@@ -145,7 +146,7 @@ function listFiles(auth, parent_id, pageToken, cb, reqursive) {
     service.files.list(params, function(err, response) {
       if (err) {
         console.log('The API returned an error: ' + err);
-        return;
+        return process.exit();
       }
 
       var files = response.files;
@@ -158,18 +159,19 @@ function listFiles(auth, parent_id, pageToken, cb, reqursive) {
           //console.log('%s (%s) mime %s', file.name, file.id, file.mimeType);
           fileList.push(file);
 
-          if (reqursive && isFolder(file)) {
+          if (recursive && isFolder(file)) {
             _listFiles(auth, file.id, null);
           }
         }
 
-        if(response.nextPageToken) {
+        if(prevToken != response.nextPageToken) {
           _listFiles(auth, parent_id, response.nextPageToken);
         }
-
-        ref--;
-        if(ref == 0) { cb(fileList); }
+        prevToken = response.nextPageToken;
       }
+
+      ref--;
+      if(ref == 0) { cb(fileList); }
     });
   }
 
@@ -303,11 +305,13 @@ function usage() {
     +"-g <filePath> get file\n"
     +"-p <filePath> put file\n"
     +"-d delete stored credentials\n"
+    +"-l list files\n"
+    +"-r recursive (can exceeded your user rate limit)\n"
     +"\n", args[1]);
 }
 
 function parseArgs(options) {
-
+  options.folder = "root";
   for(var i=2; i < args.length; i++) {
     //console.log(args[i]);
     switch(args[i]) {
@@ -328,6 +332,9 @@ function parseArgs(options) {
       case "-d":
         options.command= "del";
         options.filePath = TOKEN_PATH;
+        break;
+      case "-r":
+        options.recursive = true;
         break;
       default: {
         console.log("unknown opt");
@@ -363,8 +370,8 @@ function main(auth) {
 
   var options = {};
   parseArgs(options);
-  console.log(options);
-
+  //console.log(options);
+  
   if (options.command === "del") {
     fs.unlinkSync(options.filePath);
     return;
@@ -407,7 +414,7 @@ function main(auth) {
         return;
       }
 
-    });
+    }, options.recursive);
   });
 }
 
