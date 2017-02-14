@@ -213,64 +213,46 @@ function findFolderByName(auth, name, callback) {
 function fileDownload(auth, fileInfo, filePath) {
 
   var drive = google.drive({ version: 'v3', auth: auth });
+  var ext = filePath.split('.').pop();
+  var mimeType = null;
+  //https://developers.google.com/drive/v3/web/manage-downloads
+  if(ext === "docx") {
+    mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  console.log('Downloading %s...', filePath);
 
-  drive.files.get({
-    fileId: fileInfo.id
-  }, function (err, metadata) {
-    if (err) {
-      console.error(err);
-      return process.exit();
-    }
+  var dest = fs.createWriteStream(filePath);
 
-    console.log('Downloading %s...', filePath);
+  if (mimeType) {
+    drive.files.export({
+      fileId: fileInfo.id,
+      mimeType : mimeType
+    }).on('error', function (err) {
+      console.log('Error downloading file', err);
+      process.exit();
+    }).pipe(dest);
 
-    var dest = fs.createWriteStream(filePath);
-
+  } else {
     drive.files.get({
       fileId: fileInfo.id,
       alt: 'media'
-    })
-    .on('error', function (err) {
+    }).on('error', function (err) {
       console.log('Error downloading file', err);
       process.exit();
-    })
-    .pipe(dest);
+    }).pipe(dest);
+  }
 
-    dest
-      .on('finish', function () {
-        console.log('Downloaded %s!', filePath);
-      })
-      .on('error', function (err) {
-        console.log('Error writing file', err);
-        process.exit();
-      });
+  dest.on('finish', function () {
+    console.log('Downloaded %s!', filePath);
+  }).on('error', function (err) {
+    console.log('Error writing file', err);
+    process.exit();
   });
-}
-
-function fileExport(auth, fileInfo , filePath) {
-
-    //https://developers.google.com/drive/v3/web/manage-downloads
-    var drive = google.drive({ version: 'v3', auth: auth });
-    var dest = fs.createWriteStream(filePath);
-
-    drive.files.export({
-      fileId: fileInfo.id,
-      mimeType : metadata.mimeType //'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    }, function(err, data) {
-      if(err) {
-        console.log('Error downloading file', err);
-        process.exit();
-      }
-
-      dest.write(data);
-      console.log('Downloaded %s!', filePath);
-    });
 }
 
 function fileUpload(auth, filePath, fileInfo, parentIds, callback) {
 
   var name = path.basename(filePath);
-
   if(!name) {
     console.log('Invalid file', filePath);
     process.exit();
@@ -296,51 +278,6 @@ function fileUpload(auth, filePath, fileInfo, parentIds, callback) {
         body: fs.createReadStream(filePath)
       }
     }, callback);
-  }
-}
-
-function usage() {
-  console.log("Usage: node %s\n"
-    +"-f <folder>   gdrive folder name \n"
-    +"-g <filePath> get file\n"
-    +"-p <filePath> put file\n"
-    +"-d delete stored credentials\n"
-    +"-l list files\n"
-    +"-r recursive (can exceeded your user rate limit)\n"
-    +"\n", args[1]);
-}
-
-function parseArgs(options) {
-  options.folder = "root";
-  for(var i=2; i < args.length; i++) {
-    //console.log(args[i]);
-    switch(args[i]) {
-      case "-f":
-        options.folder = args[++i];
-        break;
-      case "-g":
-        options.command = "download";
-        options.filePath = args[++i];
-        break;
-      case "-p":
-        options.command = "upload";
-        options.filePath = args[++i];
-        break;
-      case "-l":
-        options.command = "list";
-        break;
-      case "-d":
-        options.command= "del";
-        options.filePath = TOKEN_PATH;
-        break;
-      case "-r":
-        options.recursive = true;
-        break;
-      default: {
-        console.log("unknown opt");
-        process.exit();
-      }
-    }
   }
 }
 
@@ -370,8 +307,8 @@ function main(auth) {
 
   var options = {};
   parseArgs(options);
-  //console.log(options);
-  
+  console.log(options);
+
   if (options.command === "del") {
     fs.unlinkSync(options.filePath);
     return;
@@ -413,9 +350,53 @@ function main(auth) {
         }
         return;
       }
-
     }, options.recursive);
   });
+}
+
+function usage() {
+  console.log("Usage: node %s\n"
+    +"-f <folder>   gdrive folder name \n"
+    +"-g <filePath> get file\n"
+    +"-p <filePath> put file\n"
+    +"-d            delete stored credentials\n"
+    +"-l            list files\n"
+    +"-r            recursive (can exceeded your user rate limit)\n"
+    +"\n", args[1]);
+}
+
+function parseArgs(options) {
+  options.folder = "root";
+  for(var i=2; i < args.length; i++) {
+    //console.log(args[i]);
+    switch(args[i]) {
+      case "-f":
+        options.folder = args[++i];
+        break;
+      case "-g":
+        options.command = "download";
+        options.filePath = args[++i];
+        break;
+      case "-p":
+        options.command = "upload";
+        options.filePath = args[++i];
+        break;
+      case "-l":
+        options.command = "list";
+        break;
+      case "-d":
+        options.command= "del";
+        options.filePath = TOKEN_PATH;
+        break;
+      case "-r":
+        options.recursive = true;
+        break;
+      default: {
+        console.log("unknown opt");
+        process.exit();
+      }
+    }
+  }
 }
 
 
