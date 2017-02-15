@@ -1,15 +1,16 @@
-## gdrive-sync 
+## gdrive-sync
 
 nodejs google drive file copy
 
-### setup 
+### setup
 ```
 $ git clone https://github.com/bsapundzhiev/gdrive-sync
 $ cd gdrive-sync
-$ npm install 
+$ npm install
+$ sudo npm link
 ```
 
 ### usage
 ```
-$ node gdrive-sync <options> 
+$ gdrive-sync <options>
 ```

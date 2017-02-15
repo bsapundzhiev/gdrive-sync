@@ -1,10 +1,16 @@
 {
   "name": "gdrive-sync",
   "version": "1.0.0",
-  "description": "google drive sync folder ",
+  "description": "google drive sync folder",
+  "preferGlobal": "true",
+  "bin": { "gdrive-sync": "gdrive-sync.js" },
   "main": "gdrive-sync.js",
   "scripts": {
     "test": "node gdrive-sync.js -f shared -l"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bsapundzhiev/gdrive-sync"
   },
   "keywords": [
     "google",
