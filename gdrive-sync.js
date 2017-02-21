@@ -127,7 +127,7 @@ function isFolder(fileInfo) {
  *
  * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
  */
-function listFiles(auth, parent_id, pageToken, cb, recursive) {
+function listFiles(auth, parent_id, pageToken, callback, recursive) {
   var ref = 0;
   var fileList = [];
   var prevToken = null;
@@ -172,7 +172,7 @@ function listFiles(auth, parent_id, pageToken, cb, recursive) {
       }
 
       ref--;
-      if(ref == 0) { cb(fileList); }
+      if(ref == 0) { callback(parent_id, fileList); }
     });
   }
 
@@ -251,7 +251,7 @@ function fileDownload(auth, fileInfo, filePath) {
   });
 }
 
-function fileUpload(auth, filePath, fileInfo, parentIds, callback) {
+function fileUpload(auth, filePath, fileInfo, parentId, callback) {
 
   var name = path.basename(filePath);
   if(!name) {
@@ -272,7 +272,7 @@ function fileUpload(auth, filePath, fileInfo, parentIds, callback) {
   } else {
       drive.files.create({
       resource: {
-        parents: parentIds,
+        parents: [parentId],
         name: name
       },
       media: {
@@ -280,6 +280,15 @@ function fileUpload(auth, filePath, fileInfo, parentIds, callback) {
       }
     }, callback);
   }
+}
+
+function fileDelete(auth, fileInfo, callback) {
+
+  var drive = google.drive({ version: 'v3', auth: auth });
+
+  drive.files.delete({
+    fileId: fileInfo.id
+  }, callback);
 }
 
 function findParents(fileList, fileInfo) {
@@ -299,77 +308,95 @@ function findParents(fileList, fileInfo) {
   fileInfo.parentsPath = path.reverse().join("/");
 }
 
-function main(auth) {
+function getFolderContent(auth, options, callback) {
 
-  if (args.length === 2) {
-    usage();
-    return;
-  }
+  findFolderByName(auth, options.folder, function(folderInfo) {
+    console.log("gdrive folder '%s' (%s)", options.folder, folderInfo.id);
+    listFiles(auth, folderInfo.id, null, callback, options.recursive);
+  });
+}
+
+function main(auth) {
 
   var options = {};
   parseArgs(options);
   console.log(options);
 
-  if (options.command === "del") {
+  if (options.command === "help") {
+    usage();
+    return;
+  }
+
+  if (options.command === "clear") {
     fs.unlinkSync(options.filePath);
     return;
   }
 
-  findFolderByName(auth, options.folder, function(folderInfo) {
-    console.log("gdrive folder '%s' (%s)", options.folder, folderInfo.id);
+  getFolderContent(auth, options, function(folderId, fileList) {
 
-    listFiles(auth, folderInfo.id, null, function(fileList) {
+    if (options.command === "list") {
+      fileList.forEach(function(fileInfo) {
+        findParents(fileList, fileInfo);
 
-      if (options.command === "list") {
-        fileList.forEach(function(fileInfo) {
-          findParents(fileList, fileInfo);
-
-          if (fileInfo.parentsPath) {
-            fileInfo.parentsPath += "/";
-          }
-          console.log("drive#%s:%s/%s%s", isFolder(fileInfo) ? "folder": "file", options.folder, fileInfo.parentsPath, fileInfo.name);
-        });
-        return;
-      }
-
-      var fileInfo = fileList.find(function(fileInfo) {
-        return (fileInfo.name == path.basename(options.filePath));
-      });
-
-      if (options.command === "upload") {
-        fileUpload(auth, options.filePath, fileInfo, [folderInfo.id], function(err, fileInfo) {
-          console.log("file uploaded: ", err , fileInfo);
-        });
-        return;
-      }
-
-      if (options.command === "download") {
-        if (fileInfo) {
-          fileDownload(auth, fileInfo, options.filePath);
-        } else {
-          console.log("File %s not found on drive", options.filePath);
+        if (fileInfo.parentsPath) {
+          fileInfo.parentsPath += "/";
         }
-        return;
+        console.log("drive#%s:%s/%s%s", isFolder(fileInfo) ? "folder": "file", options.folder, fileInfo.parentsPath, fileInfo.name);
+      });
+      return;
+    }
+
+    var fileInfo = fileList.find(function(fileInfo) {
+      return (fileInfo.name == path.basename(options.filePath));
+    });
+
+    if (options.command === "upload") {
+      fileUpload(auth, options.filePath, fileInfo, folderId, function(err, fileInfo) {
+        console.log("file uploaded: ", err, fileInfo);
+      });
+      return;
+    }
+
+    if (options.command === "download" || options.command === "del") {
+      if (fileInfo) {
+        if (options.command === "del") {
+          fileDelete(auth, fileInfo, function(err, fileInfo) {
+            console.log("file deleted: ", err, fileInfo);
+          });
+        } else {
+          fileDownload(auth, fileInfo, options.filePath);
+        }
+
+      } else {
+        console.log("File %s not found on drive", options.filePath);
       }
-    }, options.recursive);
+      return;
+    }
   });
 }
 
 function usage() {
   console.log("Usage: node %s\n"
-    +"-f <folder>   gdrive folder name \n"
+    +"-f <folder>   selct gdrive folder\n"
     +"-g <filePath> get file\n"
     +"-p <filePath> put file\n"
-    +"-d            delete stored credentials\n"
+    +"-d <filePath> del file\n"
     +"-l            list files\n"
     +"-r            recursive (can exceeded your user rate limit)\n"
+    +"-c            delete stored credentials\n"
     +"\n", args[1]);
 }
 
 function parseArgs(options) {
   options.folder = "root";
-  for(var i=2; i < args.length; i++) {
-    //console.log(args[i]);
+  options.command = "help";
+
+  if (args.length === 2) {
+    return;
+  }
+
+  for (var i = 2; i < args.length; i++) {
+
     switch(args[i]) {
       case "-f":
         options.folder = args[++i];
@@ -382,23 +409,24 @@ function parseArgs(options) {
         options.command = "upload";
         options.filePath = args[++i];
         break;
+      case "-d":
+        options.command = "del";
+        options.filePath = args[++i];
+        break;
       case "-l":
         options.command = "list";
         break;
-      case "-d":
-        options.command= "del";
+      case "-c":
+        options.command= "clear";
         options.filePath = TOKEN_PATH;
         break;
       case "-r":
         options.recursive = true;
         break;
       default: {
-        console.log("unknown opt");
-        process.exit();
+        options.command ="help";
+        return;
       }
     }
   }
 }
-
-
-
