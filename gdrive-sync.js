@@ -28,13 +28,13 @@ var SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.readonly'
 ];
-
-var TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH ||
-    process.env.USERPROFILE) + '/.credentials/';
+var HOME_DIR = (process.env.HOME || process.env.HOMEPATH ||
+    process.env.USERPROFILE);
+var TOKEN_DIR = HOME_DIR + '/.credentials/';
 var TOKEN_PATH = TOKEN_DIR + 'drive-nodejs-quickstart.json';
 
 // Load client secrets from a local file.
-fs.readFile('client_secret.json', function processClientSecrets(err, content) {
+fs.readFile(HOME_DIR+"/"+'client_secret.json', function processClientSecrets(err, content) {
   if (err) {
     console.log('Error loading client secret file: ' + err);
     return;
@@ -320,7 +320,7 @@ function main(auth) {
 
   var options = {};
   parseArgs(options);
-  console.log(options);
+  //console.log(options);
 
   if (options.command === "help") {
     usage();
@@ -341,6 +341,7 @@ function main(auth) {
         if (fileInfo.parentsPath) {
           fileInfo.parentsPath += "/";
         }
+
         console.log("drive#%s:%s/%s%s", isFolder(fileInfo) ? "folder": "file", options.folder, fileInfo.parentsPath, fileInfo.name);
       });
       return;
