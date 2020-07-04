@@ -12,14 +12,14 @@
  */
 'use strict';
 
-var fs = require('fs');
-var readline = require('readline');
-var google = require('googleapis');
-var googleAuth = require('google-auth-library');
-var path = require('path');
-
+const fs = require('fs');
+const readline = require('readline');
+const {google} = require('googleapis');
+const { OAuth2Client } = require('google-auth-library');
+const path = require('path');
 const args = process.argv;
-const folderMimeType = "application/vnd.google-apps.folder";
+const folderMimeType = 'application/vnd.google-apps.folder';
+
 
 // If modifying these scopes, delete your previously saved credentials
 // at ~/.credentials/drive-nodejs-quickstart.json
@@ -55,8 +55,7 @@ function authorize(credentials, callback) {
   var clientSecret = credentials.installed.client_secret;
   var clientId = credentials.installed.client_id;
   var redirectUrl = credentials.installed.redirect_uris[0];
-  var auth = new googleAuth();
-  var oauth2Client = new auth.OAuth2(clientId, clientSecret, redirectUrl);
+  var oauth2Client = new OAuth2Client(clientId, clientSecret, redirectUrl);
 
   // Check if we have previously stored a token.
   fs.readFile(TOKEN_PATH, function(err, token) {
@@ -114,8 +113,11 @@ function storeToken(token) {
       throw err;
     }
   }
-  fs.writeFile(TOKEN_PATH, JSON.stringify(token));
-  console.log('Token stored to ' + TOKEN_PATH);
+
+  fs.writeFile(TOKEN_PATH, JSON.stringify(token), function (err) {
+    if (err) return console.log(err);
+    console.log('Token stored to: ' + TOKEN_PATH);
+  });
 }
 
 function isFolder(fileInfo) {
@@ -138,23 +140,20 @@ function listFiles(auth, parent_id, pageToken, callback, recursive) {
     var params = {
       auth: auth,
       spaces: 'drive',
-      q:  "'"+ parent_id + "' in parents and trashed=false",
+      q: '\''+ parent_id + '\' in parents and trashed=false',
       pageSize: 100,
       pageToken: pageToken,
-      fields: "*"
+      fields: '*'
     };
 
-    service.files.list(params, function(err, response) {
+    service.files.list(params, (err, response) => {
       if (err) {
         console.log('The API returned an error: ' + err);
         return process.exit();
       }
 
-      var files = response.files;
-      if (files.length == 0) {
-        console.log('No files found.');
-      } else {
-
+      var files = response.data.files;
+      if (files.length > 0) {
         for (var i = 0; i < files.length; i++) {
           var file = files[i];
           //console.log('%s (%s) mime %s', file.name, file.id, file.mimeType);
@@ -179,18 +178,17 @@ function listFiles(auth, parent_id, pageToken, callback, recursive) {
   _listFiles(auth, parent_id, pageToken);
 }
 
-
 function findFolderByName(auth, name, callback) {
 
   var service = google.drive('v3');
   var params = {
     auth: auth,
-    q: "name='"+name+"' and trashed=false and mimeType='application/vnd.google-apps.folder'",
+    q: 'name=\''+name+'\' and trashed=false and mimeType=\'application/vnd.google-apps.folder\'',
     spaces: 'drive',
-    fields: "*"
+    fields: '*'
   };
   //check for alias
-  if(name === "root") {
+  if(name === 'root') {
     callback({id:name});
     return;
   }
@@ -202,7 +200,7 @@ function findFolderByName(auth, name, callback) {
       return;
     }
 
-    var files = response.files;
+    var files = response.data.files;
     if (files.length == 0) {
       console.log('Drive folder \'%s\' not found.', name);
     } else {
@@ -211,36 +209,76 @@ function findFolderByName(auth, name, callback) {
   });
 }
 
+/**
+ * G Suite formats and supported export MIME types map 
+ * https://developers.google.com/drive/v3/web/manage-downloads
+ * https://developers.google.com/drive/api/v3/ref-export-formats
+ */
+function findDriveDocumentMimeType(fileExt)
+{ 
+  switch(fileExt.toLowerCase())
+  {
+    case 'docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case 'xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    case 'pdf':
+      return 'application/pdf';
+    default:
+      return null;
+  }
+}
+
 function fileDownload(auth, fileInfo, filePath) {
 
   var drive = google.drive({ version: 'v3', auth: auth });
-  var ext = filePath.split('.').pop();
-  var mimeType = null;
-  //https://developers.google.com/drive/v3/web/manage-downloads
-  if(ext === "docx") {
-    mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  }
+  var fileExt = filePath.split('.').pop();
+  var mimeType = findDriveDocumentMimeType(fileExt);
   console.log('Downloading %s...', filePath);
 
   var dest = fs.createWriteStream(filePath);
+  var progress = 0;
+
+  var progressCallaback = (data) => {
+    progress += data.length;        
+    if (process.stdout.isTTY) {
+      process.stdout.clearLine();
+      process.stdout.cursorTo(0);
+      process.stdout.write(`Downloaded ${progress} bytes`);
+    } 
+  };
 
   if (mimeType) {
-    drive.files.export({
-      fileId: fileInfo.id,
-      mimeType : mimeType
-    }).on('error', function (err) {
-      console.log('Error downloading file', err);
-      process.exit();
-    }).pipe(dest);
+    drive.files.export(
+      { fileId: fileInfo.id, mimeType : mimeType },
+      { responseType: 'stream' }
+    ).then(res => {
+      res.data
+        .on('end', () => {
+          console.log('');
+        })  
+        .on('error', err => {
+          console.error('Error downloading file.');
+        })  
+        .on('data', progressCallaback)  
+        .pipe(dest);
+    });
 
-  } else {
-    drive.files.get({
-      fileId: fileInfo.id,
-      alt: 'media'
-    }).on('error', function (err) {
-      console.log('Error downloading file', err);
-      process.exit();
-    }).pipe(dest);
+  } else {  
+    drive.files.get(
+      { fileId: fileInfo.id, alt: 'media' },
+      { responseType: 'stream' }
+    ).then(res => {
+    res.data
+      .on('end', () => {
+        console.log('');
+      })  
+      .on('error', err => {
+        console.error('Error downloading file.');
+      })  
+      .on('data', progressCallaback)  
+      .pipe(dest);
+    });
   }
 
   dest.on('finish', function () {
@@ -260,7 +298,7 @@ function fileUpload(auth, filePath, fileInfo, parentId, callback) {
   }
 
   var drive = google.drive({ version: 'v3', auth: auth });
-  console.log("Uploading %s ...", name);
+  console.log('Uploading %s ...', name);
 
   if(fileInfo) {
       drive.files.update({
@@ -305,44 +343,60 @@ function findParents(fileList, fileInfo) {
   }
 
   find(fileList, fileInfo);
-  fileInfo.parentsPath = path.reverse().join("/");
+  fileInfo.parentsPath = path.reverse().join('/');
 }
 
 function getFolderContent(auth, options, callback) {
 
   findFolderByName(auth, options.folder, function(folderInfo) {
-    console.log("gdrive folder '%s' (%s)", options.folder, folderInfo.id);
+    console.log('gdrive folder \'%s\' (%s)', options.folder, folderInfo.id);
     listFiles(auth, folderInfo.id, null, callback, options.recursive);
   });
+}
+
+function createFolder(auth, path, parent, callback)
+{
+  var drive = google.drive({ version: 'v3', auth: auth });
+  var parents = [parent];
+  var fileMetadata = {
+    'name': path,
+    'parents': parents,
+    'mimeType': folderMimeType
+  };
+  
+  drive.files.create({
+    resource: fileMetadata,
+    fields: 'id, name'
+  }, callback);
 }
 
 function main(auth) {
 
   var options = {};
   parseArgs(options);
-  //console.log(options);
 
-  if (options.command === "help") {
+  if (options.command === 'help') {
     usage();
     return;
   }
 
-  if (options.command === "clear") {
+  if (options.command === 'clear') {
     fs.unlinkSync(options.filePath);
     return;
   }
 
   getFolderContent(auth, options, function(folderId, fileList) {
 
-    if (options.command === "list") {
+    if (options.command === 'list') {
       fileList.forEach(function(fileInfo) {
         findParents(fileList, fileInfo);
 
         if (fileInfo.parentsPath) {
-          fileInfo.parentsPath += "/";
+          fileInfo.parentsPath += '/';
         }
 
-        console.log("drive#%s:%s/%s%s", isFolder(fileInfo) ? "folder": "file", options.folder, fileInfo.parentsPath, fileInfo.name);
+        console.log('drive#%s:%s/%s%s', isFolder(fileInfo) ? 'folder': 'file', 
+                    options.folder, fileInfo.parentsPath, fileInfo.name);
       });
       return;
     }
@@ -351,46 +405,70 @@ function main(auth) {
       return (fileInfo.name == path.basename(options.filePath));
     });
 
-    if (options.command === "upload") {
+    if (options.command === 'upload') {
       fileUpload(auth, options.filePath, fileInfo, folderId, function(err, fileInfo) {
-        console.log("file uploaded: ", err, fileInfo);
+        if (err) {
+          console.log('The API returned an error:', err);
+          return;
+        }
+        console.log('File % uploaded on drive', fileInfo.data.name);
       });
       return;
     }
 
-    if (options.command === "download" || options.command === "del") {
+    if (options.command === 'download' || options.command === 'del') {
       if (fileInfo) {
-        if (options.command === "del") {
+        if (options.command === 'del') {
           fileDelete(auth, fileInfo, function(err, fileInfo) {
-            console.log("file deleted: ", err, fileInfo);
+            if (err) {
+              console.log('The API returned an error:', err);
+              return;
+            }
+            console.log('File %s deleted on drive', options.filePath);
           });
         } else {
           fileDownload(auth, fileInfo, options.filePath);
         }
 
       } else {
-        console.log("File %s not found on drive", options.filePath);
+        console.log('File %s not found on drive', options.filePath);
       }
       return;
+    }
+
+    if (options.command === 'mkdir')
+    {
+      if (!fileInfo) {
+        createFolder(auth, options.filePath, folderId, function (err, file) {
+        if (err) {
+          console.error(err);
+          return;
+        }
+        console.log('Folder %s created on drive', file.data.name);
+      });
+      } else {
+        console.log('Folder %s already exists on drive', options.filePath);
+      }
     }
   });
 }
 
 function usage() {
-  console.log("Usage: node %s\n"
-    +"-f <folder>   selct gdrive folder\n"
-    +"-g <filePath> get file\n"
-    +"-p <filePath> put file\n"
-    +"-d <filePath> del file\n"
-    +"-l            list files\n"
-    +"-r            recursive (can exceeded your user rate limit)\n"
-    +"-c            delete stored credentials\n"
-    +"\n", args[1]);
+  console.log('Usage: node %s\n'
+    +'-f <folder>   selct gdrive parent folder if not set defaults to root\n'
+    +'-g <filePath> get file from drive\n'
+    +'-p <filePath> put file on drive\n'
+    +'-d <filePath> del file from drive\n'
+    +'-m <folder>   create folde on drive\n'
+    +'-l            list files from selected folder\n'
+    +'-r            recursive (can exceeded your user rate limit)\n'
+    +'-c            delete stored credentials\n'
+    +'\n', args[1]);
 }
 
 function parseArgs(options) {
-  options.folder = "root";
-  options.command = "help";
+  options.folder = 'root';
+  options.command = 'help';
 
   if (args.length === 2) {
     return;
@@ -399,33 +477,37 @@ function parseArgs(options) {
   for (var i = 2; i < args.length; i++) {
 
     switch(args[i]) {
-      case "-f":
+      case '-f':
         options.folder = args[++i];
         break;
-      case "-g":
-        options.command = "download";
+      case '-g':
+        options.command = 'download';
         options.filePath = args[++i];
         break;
-      case "-p":
-        options.command = "upload";
+      case '-p':
+        options.command = 'upload';
         options.filePath = args[++i];
         break;
-      case "-d":
-        options.command = "del";
+      case '-d':
+        options.command = 'del';
         options.filePath = args[++i];
         break;
-      case "-l":
-        options.command = "list";
+      case '-l':
+        options.command = 'list';
         break;
-      case "-c":
-        options.command= "clear";
+      case '-c':
+        options.command= 'clear';
         options.filePath = TOKEN_PATH;
         break;
-      case "-r":
+      case '-r':
         options.recursive = true;
         break;
+      case '-m':
+        options.command = 'mkdir';
+        options.filePath = args[++i];
+        break;
       default: {
-        options.command ="help";
+        options.command ='help';
         return;
       }
     }

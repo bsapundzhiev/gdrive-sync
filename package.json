@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "google drive sync folder",
   "preferGlobal": "true",
-  "bin": { "gdrive-sync": "gdrive-sync.js" },
+  "bin": {
+    "gdrive-sync": "gdrive-sync.js"
+  },
   "main": "gdrive-sync.js",
   "scripts": {
     "test": "node gdrive-sync.js -f shared -l"
@@ -21,7 +23,7 @@
   "author": "Borislav Sapundzhiev",
   "license": "GPL-2.0",
   "dependencies": {
-    "google-auth-library": "^0.10.0",
-    "googleapis": "^16.1.0"
+    "google-auth-library": "^6.0.2",
+    "googleapis": "^52.1.0"
   }
 }
