@@ -129,53 +129,55 @@ function isFolder(fileInfo) {
  *
  * @param {google.auth.OAuth2} auth An authorized OAuth2 client.
  */
-function listFiles(auth, parent_id, pageToken, callback, recursive) {
-  var ref = 0;
-  var fileList = [];
-  var prevToken = null;
+function listFiles(auth, parentId, recursive, callback) {
 
-  var _listFiles = (auth, parent_id, token) => {
-    ref++;
-    var service = google.drive('v3');
+  var drive = google.drive({ version: 'v3', auth: auth });
+  var visitedDirs = [];
+  var fileList = [];
+
+  var _listFiles = (parentId, token) => {
+
     var params = {
-      auth: auth,
       spaces: 'drive',
-      q: '\''+ parent_id + '\' in parents and trashed=false',
-      pageSize: 100,
-      pageToken: pageToken,
-      fields: '*'
+      q: '\''+ parentId + '\' in parents and trashed=false',
+      pageSize: 1000,
+      pageToken: token,
+      fields: 'nextPageToken, files(id, name, mimeType, parents)'
     };
 
-    service.files.list(params, (err, response) => {
+    visitedDirs.push(parentId);
+    drive.files.list(params, (err, response) => {
       if (err) {
         console.log('The API returned an error: ' + err);
         return process.exit();
       }
 
       var files = response.data.files;
+      var nextPageToken = response.data.nextPageToken;
+
       if (files.length > 0) {
         for (var i = 0; i < files.length; i++) {
           var file = files[i];
-          //console.log('%s (%s) mime %s', file.name, file.id, file.mimeType);
           fileList.push(file);
 
+          if (nextPageToken) {
+            _listFiles(parentId, nextPageToken);
+          }
+
           if (recursive && isFolder(file)) {
-            _listFiles(auth, file.id, null);
+            _listFiles(file.id, null);
           }
         }
-
-        if(prevToken != response.nextPageToken) {
-          _listFiles(auth, parent_id, response.nextPageToken);
-        }
-        prevToken = response.nextPageToken;
       }
 
-      ref--;
-      if(ref == 0) { callback(parent_id, fileList); }
+      visitedDirs.pop();
+      if (callback && visitedDirs.length == 0) {
+        callback(parentId, fileList);
+      }
     });
-  }
+  };
 
-  _listFiles(auth, parent_id, pageToken);
+  _listFiles(parentId, null);
 }
 
 function findFolderByName(auth, name, callback) {
@@ -350,7 +352,7 @@ function getFolderContent(auth, options, callback) {
 
   findFolderByName(auth, options.folder, function(folderInfo) {
     console.log('gdrive folder \'%s\' (%s)', options.folder, folderInfo.id);
-    listFiles(auth, folderInfo.id, null, callback, options.recursive);
+    listFiles(auth, folderInfo.id, options.recursive, callback);
   });
 }
 
