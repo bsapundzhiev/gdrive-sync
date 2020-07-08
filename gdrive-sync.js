@@ -224,8 +224,6 @@ function findDriveDocumentMimeType(fileExt)
       return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     case 'xlsx':
       return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    case 'pdf':
-      return 'application/pdf';
     default:
       return null;
   }
@@ -236,10 +234,15 @@ function fileDownload(auth, fileInfo, filePath) {
   var drive = google.drive({ version: 'v3', auth: auth });
   var fileExt = filePath.split('.').pop();
   var mimeType = findDriveDocumentMimeType(fileExt);
-  console.log('Downloading %s...', filePath);
+ 
+  if(fs.existsSync(filePath)) {
+    console.log('Local file %s exists', filePath);
+    process.exit();
+  }
 
-  var dest = fs.createWriteStream(filePath);
   var progress = 0;
+  var dest = fs.createWriteStream(filePath); 
+  console.log('Downloading %s...', filePath);
 
   var progressCallaback = (data) => {
     progress += data.length;        
@@ -265,7 +268,6 @@ function fileDownload(auth, fileInfo, filePath) {
         .on('data', progressCallaback)  
         .pipe(dest);
     });
-
   } else {  
     drive.files.get(
       { fileId: fileInfo.id, alt: 'media' },
@@ -284,7 +286,7 @@ function fileDownload(auth, fileInfo, filePath) {
   }
 
   dest.on('finish', function () {
-    console.log('Downloaded %s!', filePath);
+    console.log('Downloaded %s', filePath);
   }).on('error', function (err) {
     console.log('Error writing file', err);
     process.exit();
@@ -294,7 +296,7 @@ function fileDownload(auth, fileInfo, filePath) {
 function fileUpload(auth, filePath, fileInfo, parentId, callback) {
 
   var name = path.basename(filePath);
-  if(!name) {
+  if(!name || !fs.existsSync(filePath)) {
     console.log('Invalid file', filePath);
     process.exit();
   }
@@ -377,19 +379,25 @@ function main(auth) {
   var options = {};
   parseArgs(options);
 
-  if (options.command === 'help') {
+  if (options.help) {
     usage();
     return;
   }
 
-  if (options.command === 'clear') {
-    fs.unlinkSync(options.filePath);
+  if (options.clear) {
+    fs.unlinkSync(options.clear);
     return;
   }
 
   getFolderContent(auth, options, function(folderId, fileList) {
 
-    if (options.command === 'list') {
+    const findFileInfo =  (fileName) => {
+      return fileList.find(function(fileInfo) {
+        return (fileInfo.name == path.basename(fileName));
+      });
+    }
+
+    if (options.list) {
       fileList.forEach(function(fileInfo) {
         findParents(fileList, fileInfo);
 
@@ -403,45 +411,46 @@ function main(auth) {
       return;
     }
 
-    var fileInfo = fileList.find(function(fileInfo) {
-      return (fileInfo.name == path.basename(options.filePath));
-    });
-
-    if (options.command === 'upload') {
-      fileUpload(auth, options.filePath, fileInfo, folderId, function(err, fileInfo) {
+    if (options.upload) {
+      var fileInfo = findFileInfo(options.upload);
+      fileUpload(auth, options.upload, fileInfo, folderId, function(err, fileInfo) {
         if (err) {
           console.log('The API returned an error:', err);
           return;
         }
-        console.log('File % uploaded on drive', fileInfo.data.name);
+        console.log('File %s uploaded on drive', fileInfo.data.name);
       });
       return;
     }
 
-    if (options.command === 'download' || options.command === 'del') {
+    if (options.download) {
+      var fileInfo = findFileInfo(options.download);
       if (fileInfo) {
-        if (options.command === 'del') {
-          fileDelete(auth, fileInfo, function(err, fileInfo) {
-            if (err) {
-              console.log('The API returned an error:', err);
-              return;
-            }
-            console.log('File %s deleted on drive', options.filePath);
-          });
-        } else {
-          fileDownload(auth, fileInfo, options.filePath);
-        }
-
+        fileDownload(auth, fileInfo, options.download);
       } else {
-        console.log('File %s not found on drive', options.filePath);
+        console.log('File %s not found on drive', options.download);
       }
-      return;
     }
 
-    if (options.command === 'mkdir')
+    if (options.delete){
+      var fileInfo = findFileInfo(options.delete);
+      if (fileInfo) {
+        fileDelete(auth, fileInfo, function(err, fileInfo) {
+          if (err) {
+            console.log('The API returned an error:', err);
+            return;
+          }
+          console.log('File %s deleted on drive', options.delete);
+        });
+      } else {
+        console.log('File %s not found on drive', options.delete);
+      }
+    }
+
+    if (options.mkdir)
     {
       if (!fileInfo) {
-        createFolder(auth, options.filePath, folderId, function (err, file) {
+        createFolder(auth, options.mkdir, folderId, function (err, file) {
         if (err) {
           console.error(err);
           return;
@@ -449,7 +458,7 @@ function main(auth) {
         console.log('Folder %s created on drive', file.data.name);
       });
       } else {
-        console.log('Folder %s already exists on drive', options.filePath);
+        console.log('Folder %s already exists on drive', options.mkdir);
       }
     }
   });
@@ -470,48 +479,43 @@ function usage() {
 
 function parseArgs(options) {
   options.folder = 'root';
-  options.command = 'help';
 
   if (args.length === 2) {
+    options.help = true;
     return;
   }
 
-  for (var i = 2; i < args.length; i++) {
+  var nextArg = (argIndex) => {
+    if (argIndex >= args.length || !args[argIndex]) {
+      console.log("Invalid or missing argument");
+      process.exit();
+    } 
+    return args[argIndex];
+  };
 
-    switch(args[i]) {
-      case '-f':
-        options.folder = args[++i];
-        break;
-      case '-g':
-        options.command = 'download';
-        options.filePath = args[++i];
-        break;
-      case '-p':
-        options.command = 'upload';
-        options.filePath = args[++i];
-        break;
-      case '-d':
-        options.command = 'del';
-        options.filePath = args[++i];
-        break;
-      case '-l':
-        options.command = 'list';
-        break;
-      case '-c':
-        options.command= 'clear';
-        options.filePath = TOKEN_PATH;
-        break;
-      case '-r':
-        options.recursive = true;
-        break;
-      case '-m':
-        options.command = 'mkdir';
-        options.filePath = args[++i];
-        break;
-      default: {
-        options.command ='help';
-        return;
+  var opts = [
+    { switch: "-f", command: 'folder', nextarg: true },
+    { switch: '-g', command: 'download', nextarg: true},
+    { switch: '-p', command: 'upload', nextarg: true },
+    { switch: '-d', command: 'delete', nextarg: true, },
+    { switch: '-l', command: 'list', nextarg: false, value: true },
+    { switch: '-c', command: 'clear', nextarg: false, value: TOKEN_PATH },
+    { switch: '-r', command: 'recursive', nextarg: false, value: true },
+    { switch: '-m', command: 'mkdir', nextarg: true}
+  ];
+
+  for (var i = 2; i < args.length; i++) {
+    var arg = args[i];
+    const foundOpt = opts.find(element => element.switch.indexOf(arg) > -1);
+    if (foundOpt) {
+      let value = (foundOpt.nextarg === true) ? nextArg(++i) : foundOpt.value; 
+      if (!value) {
+        throw 'Undefined option value';
       }
+      options[foundOpt.command] = value;
+    } else {
+      options.help = true;
+      return;
     }
   }
 }
